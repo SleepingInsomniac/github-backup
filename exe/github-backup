@@ -1,8 +1,5 @@
 #!/usr/bin/env ruby
 
-require 'bundler'
-Bundler.require
-
 lib = File.join(__dir__, '..', 'lib')
 $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
 
@@ -10,7 +7,7 @@ require 'github_backup'
 
 include GithubBackup::Helpers
 
-config = Config.new(File.join(__dir__, '..', 'default_config.json'))
+config = GithubBackup::Config.new(File.join(__dir__, '..', 'default_config.json'))
 
 config['repos_path'] ||= File.join(Dir.home, 'Repos')
 config['backup_path'] ||= File.join(Dir.home, 'Documents', 'Repo Bundles')
@@ -22,8 +19,9 @@ end
 
 config.save
 
-Dir.chdir(File.expand_path(config['repos_path']))
-github = Github.new(config['token'])
+chdir_p File.expand_path(config['repos_path'])
+
+github = GithubBackup::Api.new(config['token'])
 
 # ===============
 # = Clone gists =
@@ -54,7 +52,6 @@ end
 clone_urls = repos.map { |repo| repo['ssh_url'] }
 clone_urls.each do |url|
   user = /github\.com.([^\/]+)/.match(url)[1]
-  FileUtils.mkdir_p(user)
   inside user do
     project_name = File.basename(url.split('/').last, '.git')
     unless File.exist?(project_name)

@@ -4,10 +4,14 @@ module GithubBackup
   module Helpers
     def inside(dir)
       current = Dir.pwd
-      FileUtils.mkdir_p(dir)
-      Dir.chdir(dir)
+      chdir_p dir
       yield
       Dir.chdir(current)
+    end
+
+    def chdir_p(path)
+      FileUtils.mkdir_p path
+      Dir.chdir path
     end
   end
 end

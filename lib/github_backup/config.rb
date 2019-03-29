@@ -9,6 +9,7 @@ module GithubBackup
     def initialize(default_path)
       @override = {}
       @default_path = default_path
+      puts "Config: #{path}"
     end
 
     def defaults
