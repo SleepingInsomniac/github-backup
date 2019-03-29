@@ -1,0 +1,92 @@
+#!/usr/bin/env ruby
+
+require 'bundler'
+Bundler.require
+
+lib = File.join(__dir__, '..', 'lib')
+$LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
+
+require 'github_backup'
+
+include GithubBackup::Helpers
+
+config = Config.new(File.join(__dir__, '..', 'default_config.json'))
+
+config['repos_path'] ||= File.join(Dir.home, 'Repos')
+config['backup_path'] ||= File.join(Dir.home, 'Documents', 'Repo Bundles')
+
+if !config['token']
+  puts "Please enter your github token: "
+  config['token'] = gets.chomp
+end
+
+config.save
+
+Dir.chdir(File.expand_path(config['repos_path']))
+github = Github.new(config['token'])
+
+# ===============
+# = Clone gists =
+# ===============
+
+inside 'gists' do
+  gists = github.get('/gists')
+  while page = github.next
+    gists.concat page
+  end
+
+  gists.each do |gist|
+    unless File.exist? gist['id']
+      puts `git clone #{gist['git_pull_url']}`
+    else
+      inside gist['id'] do
+        puts "Gist: #{gist['id']}"
+        puts `git pull`
+      end
+    end
+  end
+end
+
+repos = github.get('/user/repos')
+while page = github.next
+  repos.concat page
+end
+clone_urls = repos.map { |repo| repo['ssh_url'] }
+clone_urls.each do |url|
+  user = /github\.com.([^\/]+)/.match(url)[1]
+  FileUtils.mkdir_p(user)
+  inside user do
+    project_name = File.basename(url.split('/').last, '.git')
+    unless File.exist?(project_name)
+      cmd = "git clone #{url}"
+      puts cmd
+      puts `#{cmd}`
+    else
+      # puts "Skipping existing clone: #{url}"
+      inside project_name do
+        puts "git: #{project_name}"
+        puts `git pull`
+      end
+    end
+  end
+end
+
+Dir.chdir(__dir__)
+
+users = Dir.entries('.').filter{|e| File.directory?(e) && /\A\./ !~ e }
+users.each do |user|
+  inside user do
+    repos = Dir.entries('.').filter{|e| File.directory?(e) && /\A\./ !~ e }
+    repos.each do |repo|
+      inside repo do
+        bundle = "#{repo}.gitbundle"
+        puts `git bundle create #{bundle} --all --remotes`
+        if File.exist?(bundle)
+          backup_path = File.expand_path(File.join(config['backup_path'], user))
+          FileUtils.mkdir_p(backup_path)
+          FileUtils.mv(bundle, backup_path)
+        end
+      end
+    end
+  end
+end
