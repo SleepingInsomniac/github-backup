@@ -3,87 +3,58 @@
 lib = File.join(__dir__, '..', 'lib')
 $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
 
+require 'shellwords'
+require 'thread'
 require 'github_backup'
-
+require 'github_backup/git'
 include GithubBackup::Helpers
 
 config = GithubBackup::Config.new(File.join(__dir__, '..', 'default_config.json'))
 
 config['repos_path'] ||= File.join(Dir.home, 'Repos')
-config['backup_path'] ||= File.join(Dir.home, 'Documents', 'Repo Bundles')
-
-if !config['token']
-  puts "Please enter your github token: "
-  config['token'] = gets.chomp
-end
+config['backup_path'] ||= File.join(Dir.home, 'Documents', 'RepoBundles')
 
 config.save
-
-chdir_p File.expand_path(config['repos_path'])
-
 github = GithubBackup::Api.new(config['token'])
 
-# ===============
-# = Clone gists =
-# ===============
-
-inside 'gists' do
-  gists = github.get('/gists')
-  while page = github.next
-    gists.concat page
-  end
-
-  gists.each do |gist|
-    unless File.exist? gist['id']
-      puts `git clone #{gist['git_pull_url']}`
-    else
-      inside gist['id'] do
-        puts "Gist: #{gist['id']}"
-        puts `git pull`
-      end
-    end
-  end
-end
-
+puts "Fetching repos..."
+page_no = 0
+puts "page #{page_no += 1}"
 repos = github.get('/user/repos')
 while page = github.next
+  puts "page #{page_no += 1}"
   repos.concat page
 end
+puts "Done!"
+
 clone_urls = repos.map { |repo| repo['ssh_url'] }
+
+@threads = []
+
 clone_urls.each do |url|
   user = /github\.com.([^\/]+)/.match(url)[1]
-  inside user do
-    project_name = File.basename(url.split('/').last, '.git')
-    unless File.exist?(project_name)
-      cmd = "git clone #{url}"
+  project_name = File.basename(url.split('/').last, '.git')
+  path = File.expand_path(File.join(config['repos_path'], user, project_name))
+  FileUtils.mkdir_p(File.dirname(path))
+
+  @threads << Thread.new do |thread|
+    unless File.exist?(path)
+      cmd = "git clone #{url} #{Shellwords.shellescape(path)}"
       puts cmd
       puts `#{cmd}`
     else
-      # puts "Skipping existing clone: #{url}"
-      inside project_name do
-        puts "git: #{project_name}"
-        puts `git pull`
-      end
+      puts "Updating existing repo: #{path}"
+      git_updater = GithubBackup::Git.new
+      Dir.chdir(path)
+      git_updater.update
+      backup_path = File.expand_path(File.join(config['backup_path'], user))
+      FileUtils.mkdir_p(backup_path)
+      bundle = "#{project_name}.gitbundle"
+      bundle_path = File.join(backup_path, bundle)
+      puts `git bundle create #{Shellwords.shellescape(bundle_path)} --all --remotes`
     end
+    
   end
 end
 
-Dir.chdir(__dir__)
-
-users = Dir.entries('.').filter{|e| File.directory?(e) && /\A\./ !~ e }
-users.each do |user|
-  inside user do
-    repos = Dir.entries('.').filter{|e| File.directory?(e) && /\A\./ !~ e }
-    repos.each do |repo|
-      inside repo do
-        bundle = "#{repo}.gitbundle"
-        puts `git bundle create #{bundle} --all --remotes`
-        if File.exist?(bundle)
-          backup_path = File.expand_path(File.join(config['backup_path'], user))
-          FileUtils.mkdir_p(backup_path)
-          FileUtils.mv(bundle, backup_path)
-        end
-      end
-    end
-  end
-end
+@threads.each(&:join)
