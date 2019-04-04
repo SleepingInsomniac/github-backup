@@ -65,6 +65,7 @@ clone_urls.each do |url|
   FileUtils.mkdir_p(File.dirname(path))
 
   @threads << Thread.new do |thread|
+    Dir.chdir(path)
     unless File.exist?(path)
       cmd = "git clone #{url} #{Shellwords.shellescape(path)}"
       puts cmd
@@ -72,15 +73,13 @@ clone_urls.each do |url|
     else
       puts "Updating existing repo: #{path}"
       git_updater = GithubBackup::Git.new
-      Dir.chdir(path)
       git_updater.update
-      backup_path = File.expand_path(File.join(config['backup_path'], user))
-      FileUtils.mkdir_p(backup_path)
-      bundle = "#{project_name}.gitbundle"
-      bundle_path = File.join(backup_path, bundle)
-      puts `git bundle create #{Shellwords.shellescape(bundle_path)} --all --remotes`
     end
-    
+    backup_path = File.expand_path(File.join(config['backup_path'], user))
+    FileUtils.mkdir_p(backup_path)
+    bundle = "#{project_name}.gitbundle"
+    bundle_path = File.join(backup_path, bundle)
+    puts `git bundle create #{Shellwords.shellescape(bundle_path)} --all --remotes`
   end
 end
 
