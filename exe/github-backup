@@ -14,8 +14,35 @@ config = GithubBackup::Config.new(File.join(__dir__, '..', 'default_config.json'
 config['repos_path'] ||= File.join(Dir.home, 'Repos')
 config['backup_path'] ||= File.join(Dir.home, 'Documents', 'RepoBundles')
 
+if !config['token']
+  puts "Please enter your github token: "
+  config['token'] = gets.chomp
+end
+
 config.save
 github = GithubBackup::Api.new(config['token'])
+
+# # ===============
+# # = Clone gists =
+# # ===============
+#
+# inside 'gists' do
+#   gists = github.get('/gists')
+#   while page = github.next
+#     gists.concat page
+#   end
+#
+#   gists.each do |gist|
+#     unless File.exist? gist['id']
+#       puts `git clone #{gist['git_pull_url']}`
+#     else
+#       inside gist['id'] do
+#         puts "Gist: #{gist['id']}"
+#         puts `git pull`
+#       end
+#     end
+#   end
+# end
 
 puts "Fetching repos..."
 page_no = 0
