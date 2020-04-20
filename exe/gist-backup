@@ -1,0 +1,45 @@
+#!/usr/bin/env ruby
+
+lib = File.join(__dir__, '..', 'lib')
+$LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
+
+require 'shellwords'
+require 'thread'
+require 'github_backup'
+require 'github_backup/git'
+include GithubBackup::Helpers
+
+config = GithubBackup::Config.new(File.join(__dir__, '..', 'default_config.json'))
+
+config['repos_path'] ||= File.join(Dir.home, 'Repos')
+config['backup_path'] ||= File.join(Dir.home, 'Documents', 'RepoBundles')
+
+if !config['token']
+  puts "Please enter your github token: "
+  config['token'] = gets.chomp
+end
+
+config.save
+github = GithubBackup::Api.new(config['token'])
+
+# Create the path and move to that location
+path = File.expand_path(File.join(config['repos_path'], 'gists'))
+FileUtils.mkdir_p(path)
+Dir.chdir path
+
+# Fetch all gists
+gists = github.get('/gists')
+while page = github.next
+  gists.concat page
+end
+
+gists.each do |gist|
+  unless File.exist? gist['id']
+    puts `git clone #{gist['git_pull_url']}`
+  else
+    inside gist['id'] do
+      puts "Gist: #{gist['id']}"
+      puts `git pull`
+    end
+  end
+end

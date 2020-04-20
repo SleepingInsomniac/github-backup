@@ -22,28 +22,6 @@ end
 config.save
 github = GithubBackup::Api.new(config['token'])
 
-# # ===============
-# # = Clone gists =
-# # ===============
-#
-# inside 'gists' do
-#   gists = github.get('/gists')
-#   while page = github.next
-#     gists.concat page
-#   end
-#
-#   gists.each do |gist|
-#     unless File.exist? gist['id']
-#       puts `git clone #{gist['git_pull_url']}`
-#     else
-#       inside gist['id'] do
-#         puts "Gist: #{gist['id']}"
-#         puts `git pull`
-#       end
-#     end
-#   end
-# end
-
 puts "Fetching repos..."
 page_no = 0
 puts "page #{page_no += 1}"
@@ -56,34 +34,28 @@ puts "Done!"
 
 clone_urls = repos.map { |repo| repo['ssh_url'] }
 
-@threads = []
-
 clone_urls.each do |url|
   user = /github\.com.([^\/]+)/.match(url)[1]
   project_name = File.basename(url.split('/').last, '.git')
   path = File.expand_path(File.join(config['repos_path'], user, project_name))
   FileUtils.mkdir_p(File.dirname(path))
+  Dir.chdir(File.dirname(path))
 
-  @threads << Thread.new do |thread|
-    FileUtils.mkdir_p(File.dirname(path))
-    Dir.chdir(File.dirname(path))
-    unless File.exist?(path)
-      cmd = "git clone #{url} #{Shellwords.shellescape(path)}"
-      puts cmd
-      puts `#{cmd}`
+  unless File.exist?(path)
+    cmd = "git clone #{url} #{Shellwords.shellescape(path)}"
+    puts cmd
+    result = `#{cmd}`
     Dir.chdir(path)
-    else
+  else
     Dir.chdir(path)
-      puts "Updating existing repo: #{path}"
-      git_updater = GithubBackup::Git.new
-      git_updater.update
-    end
-    backup_path = File.expand_path(File.join(config['backup_path'], user))
-    FileUtils.mkdir_p(backup_path)
-    bundle = "#{project_name}.gitbundle"
-    bundle_path = File.join(backup_path, bundle)
-    puts `git bundle create #{Shellwords.shellescape(bundle_path)} --all --remotes`
+    puts "Updating existing repo: #{path}"
+    git_updater = GithubBackup::Git.new
+    git_updater.update
   end
-end
 
-@threads.each(&:join)
+  backup_path = File.expand_path(File.join(config['backup_path'], user))
+  FileUtils.mkdir_p(backup_path)
+  bundle = "#{project_name}.gitbundle"
+  bundle_path = File.join(backup_path, bundle)
+  result = `git bundle create #{Shellwords.shellescape(bundle_path)} --all --remotes`
+end
